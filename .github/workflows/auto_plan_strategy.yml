@@ -1,0 +1,139 @@
+name: Auto-create plan_strategy file
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plan-strategy-$ github.event.issue.number 
+  cancel-in-progress: false
+
+jobs:
+  create_plan_file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create plan_strategy file if missing
+        env:
+          ISSUE_NUMBER: $ github.event.issue.number 
+          ISSUE_TITLE: $ github.event.issue.title 
+          ISSUE_URL: $ github.event.issue.html_url 
+        run: |
+          set -euo pipefail
+
+          FILE="plan_strategy_${ISSUE_NUMBER}.md"
+
+          if [ -f "$FILE" ]; then
+            echo "File already exists: $FILE"
+            exit 0
+          fi
+
+          cat > "$FILE" <<EOF
+# Goal
+Create a strategic implementation plan for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}
+
+# Assumptions
+- Audience: Mixed (maintainers + contributors).
+- Detail level: Detailed (step-by-step).
+- Phase structure: By area (CI/CD, security, dependencies, docs/quality).
+- Priorities: P0/P1/P2.
+- Outputs: PRs and a short report summary per phase.
+- Do not expose secrets. Prefer pinned versions. Suggest dependency updates only when low-risk.
+
+# Context
+- Issue: ${ISSUE_URL}
+
+# Phases
+## 1) Repository inventory + baseline
+**Description**
+Understand the current state of the repository and collect baseline signals.
+
+**Tasks**
+- [ ] Identify languages, frameworks, and build tooling
+- [ ] Map the repo structure and key entry points
+- [ ] Check README/CONTRIBUTING/LICENSE/CODEOWNERS
+- [ ] List quick wins and risks, tagged P0/P1/P2
+
+**Expected Output**
+- Baseline report section and prioritized list
+
+## 2) CI/CD (GitHub Actions)
+**Description**
+Improve workflow correctness, speed, and security.
+
+**Tasks**
+- [ ] Review workflows under .github/workflows/
+- [ ] Enforce least-privilege permissions
+- [ ] Add caching and concurrency where appropriate
+- [ ] Pin actions versions (preferably to commit SHA)
+
+**Expected Output**
+- PR(s) for workflow improvements
+- CI/CD report notes
+
+## 3) Security review
+**Description**
+Reduce risk from secrets exposure and unsafe automation.
+
+**Tasks**
+- [ ] Check for secret leaks and risky patterns
+- [ ] Review workflow triggers and untrusted code execution risks
+- [ ] Document P0 items and mitigations
+
+**Expected Output**
+- PR(s) for security hardening (if applicable)
+- Security findings section
+
+## 4) Dependencies + maintenance
+**Description**
+Ensure dependencies are safe, pinned, and manageable.
+
+**Tasks**
+- [ ] Review lockfiles and update policy
+- [ ] Run relevant audits (npm audit / pip-audit / etc.) when applicable
+- [ ] Propose low-risk updates first
+
+**Expected Output**
+- PR(s) for low-risk dependency updates (if safe)
+- Maintenance notes
+
+## 5) Code quality + tests + docs
+**Description**
+Improve reliability and contributor experience.
+
+**Tasks**
+- [ ] Ensure lint/format/test commands exist and are documented
+- [ ] Add missing basic tests if needed
+- [ ] Improve docs for setup and contribution
+
+**Expected Output**
+- PR(s) for lint/test/doc improvements
+- Final report section
+
+# Risks / Notes
+- Never include secrets. Use [REDACTED] if needed.
+- Avoid heavy new tooling unless clearly justified.
+EOF
+
+      - name: Commit and push
+        env:
+          ISSUE_NUMBER: $ github.event.issue.number 
+        run: |
+          set -euo pipefail
+
+          FILE="plan_strategy_${ISSUE_NUMBER}.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git status --porcelain | grep -q .; then
+            git add "$FILE"
+            git commit -m "Add plan_strategy for issue #${ISSUE_NUMBER}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
