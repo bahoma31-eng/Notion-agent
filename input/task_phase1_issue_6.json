@@ -1,0 +1,53 @@
+{
+  "id": "task_phase1_issue_6",
+  "issue_number": 6,
+  "phase": {
+    "number": 1,
+    "title": "Analysis & Specification",
+    "description": "Clarify requirements and define stable conventions for file locations, naming, and JSON schema."
+  },
+  "tasks": [
+    {
+      "id": "confirm_email_matching",
+      "text": "Confirm the exact email matching conditions (recipient, sender) and whether subject filters are needed",
+      "status": "todo"
+    },
+    {
+      "id": "define_plan_path",
+      "text": "Define the canonical plan file path: plans/plan_strategy_[ISSUE_NUMBER].md",
+      "status": "todo"
+    },
+    {
+      "id": "define_json_path",
+      "text": "Define the canonical JSON task file path: input/task_phase1_issue_[ISSUE_NUMBER].json",
+      "status": "todo"
+    },
+    {
+      "id": "define_json_schema",
+      "text": "Define the JSON schema for Phase 1 tasks (metadata, checklist array, expected output)",
+      "status": "todo"
+    },
+    {
+      "id": "define_label_mapping",
+      "text": "Decide label mapping rules (bug/enhancement/docs/ci/task)",
+      "status": "todo"
+    },
+    {
+      "id": "define_html_template",
+      "text": "Define the HTML report template sections",
+      "status": "todo"
+    },
+    {
+      "id": "define_redaction_rules",
+      "text": "Define how to handle redactions in report and generated files (use [REDACTED])",
+      "status": "todo"
+    }
+  ],
+  "expected_output": "A consistent naming convention, a fixed JSON schema, and a fixed HTML report format.",
+  "links": {
+    "issue": "https://github.com/bahoma31-eng/Notion-agent/issues/6",
+    "plan": "https://github.com/bahoma31-eng/Notion-agent/blob/main/plans/plan_strategy_6.md",
+    "json": "https://github.com/bahoma31-eng/Notion-agent/blob/main/input/task_phase1_issue_6.json"
+  },
+  "createdAt": "2026-04-16T20:23:34Z"
+}
