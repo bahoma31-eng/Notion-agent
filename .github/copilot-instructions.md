@@ -19,6 +19,26 @@ gh pr merge "$PR_NUMBER" --squash --admin --delete-branch
 
 ---
 
+## 🤖 قاعدة تكليف Copilot — إلزامية بعد كل Issue
+
+> ⚠️ بعد إنشاء أي Issue والحصول على موافقة المستخدم،
+> **يجب تكليف GitHub Copilot بالتنفيذ تلقائياً** بدون انتظار أي خطوة يدوية.
+
+### سير العمل الصحيح:
+
+```
+1. إنشاء Issue  →  موافقة المستخدم  →  تكليف Copilot تلقائياً
+                                      ↓
+                              لا تنتظر طلب "Assign to Copilot"
+                              من المستخدم يدوياً
+```
+
+### كيفية التنفيذ:
+
+بعد نشر الـ Issue وموافقة المستخدم، يقوم المساعد مباشرةً باستدعاء أداة `assign_copilot_to_issue` مع رقم الـ Issue.
+
+---
+
 ## 🔐 قاعدة GITHUB_TOKEN — إلزامية لكل Issue
 
 ### ما هو `secrets.GITHUB_TOKEN`؟
