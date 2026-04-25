@@ -21,9 +21,21 @@ GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com"
 DEFAULT_MODEL = "meta-llama-3.3-70b-instruct"
 
 
+def build_url() -> str:
+    """Build a fully-qualified chat/completions URL, always with scheme+host."""
+    # Use env var only if it's a non-empty, absolute URL; otherwise fall back to GitHub Models
+    raw = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
+    base = raw if raw.startswith(("http://", "https://")) else GITHUB_MODELS_ENDPOINT
+    url = f"{base}/chat/completions"
+    # Fast-fail guard
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"Constructed URL has no scheme: {url!r}. Check OPENAI_BASE_URL.")
+    return url
+
+
 def call_model(api_key: str, model: str, prompt: str) -> str:
-    base_url = os.getenv("OPENAI_BASE_URL", GITHUB_MODELS_ENDPOINT)
-    url = f"{base_url}/chat/completions"
+    url = build_url()
+    print(f"Calling model endpoint: {url}")
 
     payload = {
         "model": model,
@@ -96,7 +108,7 @@ def main() -> None:
     if not smtp_user or not smtp_password:
         raise SystemExit("Missing SMTP_USER or SMTP_PASSWORD secret")
 
-    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+    model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_MODEL
     today = date.today().isoformat()
 
     prompt = f"""
