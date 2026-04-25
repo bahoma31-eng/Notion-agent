@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a weekly report on the Iran-America-Israel conflict using OpenAI,
+Generate a weekly report on the Iran-America-Israel conflict using GitHub Models (Llama 3.3 70B),
 save it to plans/weekly_report.md, and email it to the configured recipient.
 """
 
@@ -13,13 +13,16 @@ from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-
 # ---------------------------------------------------------------------------
-# OpenAI helper
+# GitHub Models (OpenAI-compatible) helper
 # ---------------------------------------------------------------------------
 
-def call_openai(api_key: str, model: str, prompt: str) -> str:
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com"
+DEFAULT_MODEL = "meta-llama-3.3-70b-instruct"
+
+
+def call_model(api_key: str, model: str, prompt: str) -> str:
+    base_url = os.getenv("OPENAI_BASE_URL", GITHUB_MODELS_ENDPOINT)
     url = f"{base_url}/chat/completions"
 
     payload = {
@@ -35,6 +38,7 @@ def call_openai(api_key: str, model: str, prompt: str) -> str:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.4,
+        "max_tokens": 4096,
     }
 
     data = json.dumps(payload).encode("utf-8")
@@ -43,15 +47,16 @@ def call_openai(api_key: str, model: str, prompt: str) -> str:
     req.add_header("Content-Type", "application/json")
 
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             out = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise SystemExit(f"OpenAI API HTTP error {exc.code}: {body}") from exc
+        raise SystemExit(f"GitHub Models API HTTP error {exc.code}: {body}") from exc
     except urllib.error.URLError as exc:
-        raise SystemExit(f"OpenAI API network error: {exc.reason}") from exc
+        raise SystemExit(f"GitHub Models API network error: {exc.reason}") from exc
 
     return out["choices"][0]["message"]["content"]
+
 
 # ---------------------------------------------------------------------------
 # Email helper
@@ -63,7 +68,6 @@ def send_email(smtp_user: str, smtp_password: str, recipient: str,
     msg["Subject"] = subject
     msg["From"] = smtp_user
     msg["To"] = recipient
-
     msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
     try:
@@ -85,14 +89,14 @@ def send_email(smtp_user: str, smtp_password: str, recipient: str,
 def main() -> None:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
-        raise SystemExit("Missing OPENAI_API_KEY secret")
+        raise SystemExit("Missing OPENAI_API_KEY secret (should be your GitHub PAT with Models access)")
 
     smtp_user = os.getenv("SMTP_USER", "").strip()
     smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
     if not smtp_user or not smtp_password:
         raise SystemExit("Missing SMTP_USER or SMTP_PASSWORD secret")
 
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
     today = date.today().isoformat()
 
     prompt = f"""
@@ -127,17 +131,15 @@ def main() -> None:
 اكتب التقرير بأسلوب مهني وموضوعي. لا تُبدِ رأياً شخصياً، بل اعتمد على التحليل الموضوعي.
 """
 
-    print("Generating weekly report via OpenAI …")
-    report_md = call_openai(api_key, model, prompt).strip()
+    print(f"Generating weekly report via GitHub Models ({model}) …")
+    report_md = call_model(api_key, model, prompt).strip()
 
-    # Save report
     os.makedirs("plans", exist_ok=True)
     report_path = os.path.join("plans", "weekly_report.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_md + "\n")
     print(f"Report saved to {report_path}")
 
-    # Build email body
     greeting = (
         "السلام عليكم ورحمة الله وبركاته،\n\n"
         "نرفق إليكم التقرير الأسبوعي الشامل عن آخر مستجدات الصراع بين إيران وأمريكا "
@@ -146,7 +148,7 @@ def main() -> None:
         "وتحليلاً موجزاً للوضع الراهن.\n\n"
         "نأمل أن يكون التقرير مفيداً ومستوفياً لاحتياجاتكم.\n\n"
         "مع التقدير،\n"
-        "نظام التقارير الأسبوعية الآلي\n"
+        "نظام التقارير الأسبوعية الآلي (مدعوم بـ Llama 3.3 70B عبر GitHub Models)\n"
         "─────────────────────────────────\n\n"
     )
     email_body = greeting + report_md
