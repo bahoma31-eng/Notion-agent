@@ -65,14 +65,16 @@ jobs:
 
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: #$EXISTING_PR"
-            PR_URL="https://github.com/bahoma31-eng/Notion-agent/pull/$EXISTING_PR"
+            PR_NUMBER="$EXISTING_PR"
           else
             PR_URL=$(gh pr create \
               --title "تقرير أسبوعي: آخر مستجدات الحرب بين إيران وأمريكا وإسرائيل (${DATE})" \
               --body "تقرير أسبوعي آلي مُولَّد بتاريخ ${DATE} يغطي آخر مستجدات الصراع بين إيران وأمريكا وإسرائيل." \
               --base "${DEFAULT_BRANCH:-main}" \
               --head "$BRANCH")
+            PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
           fi
 
-          echo "PR: $PR_URL"
-          gh pr merge --auto --squash "$PR_URL"
+          echo "Merging PR #${PR_NUMBER} …"
+          gh pr merge "$PR_NUMBER" --squash --admin --delete-branch
+          echo "PR merged successfully."
