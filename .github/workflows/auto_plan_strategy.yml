@@ -6,9 +6,10 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
-  group: plan-strategy-$ github.event.issue.number 
+  group: plan-strategy-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
@@ -25,12 +26,12 @@ jobs:
 
       - name: Generate plan_strategy file (AI)
         env:
-          GITHUB_TOKEN: $ secrets.GITHUB_TOKEN 
-          GITHUB_REPOSITORY: $ github.repository 
-          ISSUE_NUMBER: $ github.event.issue.number 
-          OPENAI_API_KEY: $ secrets.OPENAI_API_KEY 
-          OPENAI_MODEL: $ vars.OPENAI_MODEL 
-          OPENAI_BASE_URL: $ vars.OPENAI_BASE_URL 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
         run: |
           set -euo pipefail
           FILE="plan_strategy_${ISSUE_NUMBER}.md"
@@ -40,20 +41,39 @@ jobs:
           fi
           python scripts/generate_plan_strategy.py
 
-      - name: Commit and push
+      - name: Commit, open PR, and auto-merge
         env:
-          ISSUE_NUMBER: $ github.event.issue.number 
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           FILE="plan_strategy_${ISSUE_NUMBER}.md"
 
+          if ! git status --porcelain | grep -q .; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          BRANCH="plan/issue-${ISSUE_NUMBER}"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git status --porcelain | grep -q .; then
-            git add "$FILE"
-            git commit -m "Add AI plan_strategy for issue #${ISSUE_NUMBER}"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git checkout -b "$BRANCH"
+          git add "$FILE"
+          git commit -m "Add AI plan_strategy for issue #${ISSUE_NUMBER}"
+          git push origin "$BRANCH"
+
+          # Open a non-draft PR whose title matches the issue title
+          PR_URL=$(gh pr create \
+            --title "${ISSUE_TITLE}" \
+            --body "Closes #${ISSUE_NUMBER}" \
+            --base "$DEFAULT_BRANCH" \
+            --head "$BRANCH")
+
+          echo "PR created: $PR_URL"
+
+          # Enable auto-merge so the PR merges automatically when all checks pass
+          gh pr merge --auto --squash "$PR_URL"
