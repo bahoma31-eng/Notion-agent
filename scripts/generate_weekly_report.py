@@ -18,16 +18,14 @@ from email.mime.text import MIMEText
 # ---------------------------------------------------------------------------
 
 GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com"
-DEFAULT_MODEL = "meta-llama-3.3-70b-instruct"
+DEFAULT_MODEL = "Llama-3.3-70B-Instruct"
 
 
 def build_url() -> str:
     """Build a fully-qualified chat/completions URL, always with scheme+host."""
-    # Use env var only if it's a non-empty, absolute URL; otherwise fall back to GitHub Models
     raw = (os.getenv("OPENAI_BASE_URL") or "").strip().rstrip("/")
     base = raw if raw.startswith(("http://", "https://")) else GITHUB_MODELS_ENDPOINT
     url = f"{base}/chat/completions"
-    # Fast-fail guard
     if not url.startswith(("http://", "https://")):
         raise ValueError(f"Constructed URL has no scheme: {url!r}. Check OPENAI_BASE_URL.")
     return url
