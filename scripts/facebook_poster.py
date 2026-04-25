@@ -42,6 +42,8 @@ def generate_post() -> str:
             temperature=0.9,
             max_tokens=300,
         )
+        if not response.choices:
+            raise ValueError("الرد من OpenAI لم يحتوِ على أي خيارات.")
         message = response.choices[0].message.content
         if not message:
             raise ValueError("الرد من OpenAI كان فارغاً.")
