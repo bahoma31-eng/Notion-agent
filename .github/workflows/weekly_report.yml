@@ -52,17 +52,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Delete remote branch if it already exists (from a previous failed run)
+          git push origin --delete "$BRANCH" 2>/dev/null || true
+
           git checkout -b "$BRANCH"
           git add plans/weekly_report.md
           git commit -m "Add weekly conflict report for ${DATE}"
           git push origin "$BRANCH"
 
-          PR_URL=$(gh pr create \
-            --title "تقرير أسبوعي: آخر مستجدات الحرب بين إيران وأمريكا وإسرائيل (${DATE})" \
-            --body "تقرير أسبوعي آلي مُولَّد بتاريخ ${DATE} يغطي آخر مستجدات الصراع بين إيران وأمريكا وإسرائيل." \
-            --base "${DEFAULT_BRANCH:-main}" \
-            --head "$BRANCH")
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
 
-          echo "PR created: $PR_URL"
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: #$EXISTING_PR"
+            PR_URL="https://github.com/bahoma31-eng/Notion-agent/pull/$EXISTING_PR"
+          else
+            PR_URL=$(gh pr create \
+              --title "تقرير أسبوعي: آخر مستجدات الحرب بين إيران وأمريكا وإسرائيل (${DATE})" \
+              --body "تقرير أسبوعي آلي مُولَّد بتاريخ ${DATE} يغطي آخر مستجدات الصراع بين إيران وأمريكا وإسرائيل." \
+              --base "${DEFAULT_BRANCH:-main}" \
+              --head "$BRANCH")
+          fi
 
+          echo "PR: $PR_URL"
           gh pr merge --auto --squash "$PR_URL"
