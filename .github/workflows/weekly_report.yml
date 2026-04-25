@@ -76,5 +76,5 @@ jobs:
           fi
 
           echo "Merging PR #${PR_NUMBER} …"
-          gh pr merge "$PR_NUMBER" --squash --admin --delete-branch
-          echo "PR merged successfully."
+          gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
+          echo "PR merge initiated successfully."
