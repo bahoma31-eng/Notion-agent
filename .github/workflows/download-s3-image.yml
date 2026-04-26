@@ -12,8 +12,6 @@ permissions:
 jobs:
   download-image:
     runs-on: ubuntu-latest
-    env:
-      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
 
     steps:
       - name: Checkout
@@ -48,6 +46,7 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           IMG_URL: ${{ steps.extract_url.outputs.img_url }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -139,6 +138,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
           REPO: ${{ github.repository }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           curl -s -X POST \
             -H "Authorization: Bearer $REPO_TOKEN" \
