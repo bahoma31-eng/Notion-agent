@@ -42,9 +42,11 @@ jobs:
           set -euo pipefail
 
           if [ -z "$S3_URL" ]; then
-            gh issue comment "$ISSUE_NUMBER" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "❌ لم يتم العثور على رابط S3 صالح في وصف الـ Issue. يرجى إدراج رابط يحتوي على \`amazonaws.com\` في وصف الـ Issue."
+            curl -s -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
+              -d "{\"body\":\"❌ لم يتم العثور على رابط S3 صالح في وصف الـ Issue. يرجى إدراج رابط يحتوي على \\`amazonaws.com\\` في وصف الـ Issue.\"}"
             exit 1
           fi
 
@@ -58,9 +60,11 @@ jobs:
           HTTP_CODE=$(curl -sL -w "%{http_code}" -D "$TEMP_HEADERS" -o "$TEMP_FILE" "$S3_URL")
 
           if [ "$HTTP_CODE" != "200" ]; then
-            gh issue comment "$ISSUE_NUMBER" \
-              --repo "$GITHUB_REPOSITORY" \
-              --body "❌ فشل تحميل الصورة من الرابط. رمز الاستجابة HTTP: \`$HTTP_CODE\`"
+            curl -s -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
+              -d "{\"body\":\"❌ فشل تحميل الصورة من الرابط. رمز الاستجابة HTTP: \\`$HTTP_CODE\\`\"}"
             exit 1
           fi
 
@@ -84,13 +88,14 @@ jobs:
           cp "$TEMP_FILE" "$DEST"
           echo "filename=$DEST" >> "$GITHUB_OUTPUT"
 
-      # إنشاء branch وفتح PR وتفعيل auto-merge
+      # إنشاء branch وفتح PR عبر GitHub REST API وتفعيل auto-merge
       - name: Commit and open PR
         if: steps.download.conclusion == 'success'
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -99,39 +104,57 @@ jobs:
 
           BRANCH="uploads/issue-${ISSUE_NUMBER}"
 
-          # إنشاء PR إذا لم يكن موجوداً
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          # حذف البرانش القديم إن وجد
+          git push origin --delete "$BRANCH" 2>/dev/null || true
 
-          if [ -n "$EXISTING_PR" ]; then
-            PR_NUMBER="$EXISTING_PR"
-          else
-            # حذف الـ branch القديم فقط إذا لم يكن هناك PR مرتبط به
-            git push origin --delete "$BRANCH" 2>/dev/null || true
+          git checkout -b "$BRANCH"
+          git add "$FILENAME"
+          git commit -m "feat: Add S3 image for issue #${ISSUE_NUMBER}"
+          git push origin "$BRANCH"
 
-            git checkout -b "$BRANCH"
-            git add "$FILENAME"
-            git commit -m "feat: Add S3 image for issue #${ISSUE_NUMBER}"
-            git push origin "$BRANCH"
+          # إنشاء PR عبر GitHub REST API مباشرةً بدون gh CLI
+          PR_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/pulls" \
+            -d "{
+              \"title\": \"feat: تحميل صورة S3 للـ Issue #${ISSUE_NUMBER}\",
+              \"body\": \"Closes #${ISSUE_NUMBER}\",
+              \"head\": \"$BRANCH\",
+              \"base\": \"${DEFAULT_BRANCH:-main}\",
+              \"draft\": false
+            }")
 
-            PR_URL=$(gh pr create \
-              --title "feat: تحميل صورة S3 للـ Issue #${ISSUE_NUMBER}" \
-              --body "Closes #${ISSUE_NUMBER}" \
-              --base "${DEFAULT_BRANCH:-main}" \
-              --head "$BRANCH")
-            PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
-          fi
+          PR_NUMBER=$(echo "$PR_RESPONSE" | grep -o '"number":[0-9]*' | head -1 | grep -o '[0-9]*')
+          echo "PR #${PR_NUMBER} created."
 
-          # تفعيل auto-merge بعد اجتياز جميع الفحوصات
-          gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
-          echo "PR #${PR_NUMBER} created and auto-merge enabled."
+          # تفعيل auto-merge
+          curl -s -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/merge" \
+            -d "{\"merge_method\": \"squash\"}" || true
 
-      # إغلاق الـ Issue بعد نجاح العملية
+          echo "Auto-merge enabled for PR #${PR_NUMBER}."
+
+      # إغلاق الـ Issue بعد نجاح العملية عبر GitHub REST API
       - name: Close issue
         if: steps.download.conclusion == 'success'
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
+          REPO: ${{ github.repository }}
         run: |
-          gh issue close "$ISSUE_NUMBER" \
-            --repo "$GITHUB_REPOSITORY" \
-            --comment "✅ تم تحميل الصورة وحفظها في \`${FILENAME}\` بنجاح! سيتم دمج الـ commit تلقائياً على \`main\` عبر PR مفتوح."
+          # إضافة تعليق
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+            -d "{\"body\": \"✅ تم تحميل الصورة وحفظها في \\`${FILENAME}\\` بنجاح! سيتم دمج الـ commit تلقائياً على \\`main\\`.\"}"
+
+          # إغلاق الـ Issue
+          curl -s -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER" \
+            -d "{\"state\": \"closed\"}"
