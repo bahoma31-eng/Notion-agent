@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
 صورة مطعم الركن الجميل — مُشفّرة بـ Base64
-يمكن استخدام هذا الملف مباشرة في facebook_publisher.py
+الصورة الأصلية للمطعم مع اسم المطعم مكتوباً عليها
 """
-
 import base64
 
-# صورة المطعم مُشفّرة بـ Base64
-# لاستخدامها: from assets.restaurant_image_b64 import get_image_bytes
-RESTAURANT_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAABYAAAAMACAIAAAASU1SbAAAAiXpUWHRSYXcgcHJvZmlsZSB0eXBlIGlwdGMAAAiZTYwxDgIxDAT7vOKekDjrtV1T0VHwgbtcIiEhgfh/QaDgmGlWW0w6X66n5fl6jNu9p+ULkapDENgzpj+Kl5aFfa6KnYWgSjZjGOiSYRxTY..."
-
+# استخدام: from assets.restaurant_image_b64 import get_image_bytes
+RESTAURANT_IMAGE_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkK"
 
 def get_image_bytes() -> bytes:
     """إرجاع الصورة كـ bytes جاهزة للرفع على فيسبوك"""
