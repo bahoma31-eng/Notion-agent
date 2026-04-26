@@ -1,0 +1,138 @@
+name: Download S3 Image from Issue
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  download-image:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # استخراج أول رابط S3 أو amazonaws من وصف الـ Issue
+      - name: Extract S3 URL from issue body
+        id: extract_url
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          S3_URL=$(printf '%s' "$ISSUE_BODY" | grep -oP 'https?://[^\s"<>]*amazonaws\.com[^\s"<>]*' | head -1 || true)
+          if [ -z "$S3_URL" ]; then
+            S3_URL=$(printf '%s' "$ISSUE_BODY" | grep -oP 'https?://s3\.[^\s"<>]*' | head -1 || true)
+          fi
+          echo "s3_url=$S3_URL" >> "$GITHUB_OUTPUT"
+
+      # تحميل الصورة وتحديد الامتداد وحفظها في مجلد uploads/
+      - name: Download image and save to uploads/
+        id: download
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          S3_URL: ${{ steps.extract_url.outputs.s3_url }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$S3_URL" ]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "❌ لم يتم العثور على رابط S3 صالح في وصف الـ Issue. يرجى إدراج رابط يحتوي على \`amazonaws.com\` في وصف الـ Issue."
+            exit 1
+          fi
+
+          # تحديد الامتداد من الرابط (بدون query string)
+          URL_PATH=$(printf '%s' "$S3_URL" | sed 's/?.*//')
+          EXT=$(printf '%s' "$URL_PATH" | grep -oP '\.(jpg|jpeg|png|gif|webp|bmp|svg|tiff?)$' | sed 's/\.//' | sed 's/^tif$/tiff/' || true)
+
+          # تحميل الصورة وحفظ الـ headers في نفس الطلب
+          TEMP_FILE="/tmp/s3_image_${ISSUE_NUMBER}"
+          TEMP_HEADERS="/tmp/s3_headers_${ISSUE_NUMBER}"
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -D "$TEMP_HEADERS" -o "$TEMP_FILE" "$S3_URL")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            gh issue comment "$ISSUE_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "❌ فشل تحميل الصورة من الرابط. رمز الاستجابة HTTP: \`$HTTP_CODE\`"
+            exit 1
+          fi
+
+          # إذا لم يُحدَّد الامتداد من الرابط، استخرجه من Content-Type header المحفوظ
+          if [ -z "$EXT" ]; then
+            CONTENT_TYPE=$(grep -i '^content-type:' "$TEMP_HEADERS" | grep -oP '(?<=image/)[a-zA-Z0-9+]+' | head -1 || true)
+            case "$CONTENT_TYPE" in
+              jpeg|jpg)  EXT="jpg" ;;
+              png)       EXT="png" ;;
+              gif)       EXT="gif" ;;
+              webp)      EXT="webp" ;;
+              svg+xml)   EXT="svg" ;;
+              bmp)       EXT="bmp" ;;
+              tiff)      EXT="tiff" ;;
+              *)         EXT="jpg" ;;
+            esac
+          fi
+
+          mkdir -p uploads
+          DEST="uploads/issue-${ISSUE_NUMBER}.${EXT}"
+          cp "$TEMP_FILE" "$DEST"
+          echo "filename=$DEST" >> "$GITHUB_OUTPUT"
+
+      # إنشاء branch وفتح PR وتفعيل auto-merge
+      - name: Commit and open PR
+        if: steps.download.conclusion == 'success'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          FILENAME: ${{ steps.download.outputs.filename }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="uploads/issue-${ISSUE_NUMBER}"
+
+          # إنشاء PR إذا لم يكن موجوداً
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            PR_NUMBER="$EXISTING_PR"
+          else
+            # حذف الـ branch القديم فقط إذا لم يكن هناك PR مرتبط به
+            git push origin --delete "$BRANCH" 2>/dev/null || true
+
+            git checkout -b "$BRANCH"
+            git add "$FILENAME"
+            git commit -m "feat: Add S3 image for issue #${ISSUE_NUMBER}"
+            git push origin "$BRANCH"
+
+            PR_URL=$(gh pr create \
+              --title "feat: تحميل صورة S3 للـ Issue #${ISSUE_NUMBER}" \
+              --body "Closes #${ISSUE_NUMBER}" \
+              --base "${DEFAULT_BRANCH:-main}" \
+              --head "$BRANCH" \
+              --no-draft)
+            PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+          fi
+
+          # تفعيل auto-merge بعد اجتياز جميع الفحوصات
+          gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
+          echo "PR #${PR_NUMBER} created and auto-merge enabled."
+
+      # إغلاق الـ Issue بعد نجاح العملية
+      - name: Close issue
+        if: steps.download.conclusion == 'success'
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          FILENAME: ${{ steps.download.outputs.filename }}
+        run: |
+          gh issue close "$ISSUE_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --comment "✅ تم تحميل الصورة وحفظها في \`${FILENAME}\` بنجاح! سيتم دمج الـ commit تلقائياً على \`main\` عبر PR مفتوح."
