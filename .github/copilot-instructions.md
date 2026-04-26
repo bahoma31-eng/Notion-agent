@@ -4,7 +4,7 @@
 
 - **دائماً** استخدم `--auto` وليس `--admin` عند دمج الـ PR تلقائياً
 - **دائماً** أضف `permissions: contents: write` و `pull-requests: write` لكل workflow ينشئ PR
-- **دائماً** استخدم `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` لعمليات المستودع (فتح PR، push، merge)
+- **دائماً** استخدم `REPO_TOKEN` لعمليات المستودع التي تحتاج فتح PR ودمجه (push، merge، pr create)
 - **دائماً** استخدم `MODELS_TOKEN` للاتصال بـ GitHub Models API حصراً
 - **لا تضع كلاهما في نفس المتغير** — لكل استخدام متغيره المخصص
 - للتفاصيل راجع `.github/WORKFLOW_GUIDE.md`
@@ -33,7 +33,7 @@ gh pr merge "$PR_NUMBER" --squash --admin --delete-branch
 ```
 
 > استخدم `MODELS_TOKEN` حصراً للاتصال بـ GitHub Models.
-> استخدم `GITHUB_TOKEN` حصراً لعمليات المستودع (PR, push, merge).
+> استخدم `REPO_TOKEN` حصراً لعمليات المستودع (PR, push, merge).
 
 ---
 
@@ -66,6 +66,22 @@ gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
 
 ---
 
+### درس 4: `GITHUB_TOKEN` التلقائي لا يكفي لدمج PRs مع Rulesets
+
+`secrets.GITHUB_TOKEN` التلقائي **لا يملك صلاحية كافية** لفتح PR ودمجه عندما تكون Rulesets مُفعّلة على `main`.
+
+```yaml
+# ❌ يفشل في Step 6 مع Rulesets
+GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# ✅ الصحيح: استخدام REPO_TOKEN (PAT بصلاحية repo كاملة)
+GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+```
+
+> استخدم `REPO_TOKEN` في أي Step يحتاج فتح PR أو دمجه.
+
+---
+
 ## 🤖 قاعدة تكليف Copilot — إلزامية بعد كل Issue
 
 > ⚠️ بعد إنشاء أي Issue والحصول على موافقة المستخدم،
@@ -79,32 +95,39 @@ gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
 
 ---
 
-## 🔐 قاعدة GITHUB_TOKEN — إلزامية لكل Issue
+## 🔐 قاعدة Tokens — إلزامية لكل Issue
 
-`secrets.GITHUB_TOKEN` هو **توكن داخلي تلقائي** يُوفّره GitHub في كل Workflow run.
-
-> ⚠️ لا تطلب من المستخدم إنشاءه — GitHub يرفض أي Secret يبدأ بـ `GITHUB_`
+| التوكن | الاستخدام | المصدر |
+|--------|-----------|--------|
+| `secrets.GITHUB_TOKEN` | توكن تلقائي داخلي — **لا يُستخدم لعمليات PR/merge مع Rulesets** | ✅ تلقائي |
+| `secrets.REPO_TOKEN` | عمليات المستودع: PR، push، merge — **الأولوية على GITHUB_TOKEN** | ⚠️ PAT يدوي بصلاحية `repo` |
+| `secrets.MODELS_TOKEN` | GitHub Models API حصراً | ⚠️ PAT يدوي بصلاحية `models` |
 
 ```yaml
-# ✅ لعمليات المستودع
+# ✅ النمط الصحيح لكل workflow يفتح PR ويدمجه
 permissions:
   contents: write
   pull-requests: write
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-# ✅ لـ GitHub Models حصراً
-env:
-  MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
+steps:
+  - name: Run script (GitHub Models)
+    env:
+      GH_TOKEN: ${{ secrets.MODELS_TOKEN }}   # للنماذج فقط
+
+  - name: Commit and push log via PR branch
+    env:
+      GH_TOKEN: ${{ secrets.REPO_TOKEN }}     # لعمليات المستودع
 ```
+
+> ⚠️ لا تطلب من المستخدم إنشاء `GITHUB_TOKEN` — GitHub يرفع خطأ لأي Secret يبدأ بـ `GITHUB_`
 
 ---
 
 ## 📋 المتغيرات السرية المخزنة في المستودع
 
 | اسم الـ Secret | الوصف | طريقة التوفير |
-|----------------|-------|--------------|
-| `GH_TOKEN` | يُعيَّن من `${{ secrets.GITHUB_TOKEN }}` — لعمليات المستودع | ✅ تلقائي |
+|----------------|-------|--------------| 
+| `REPO_TOKEN` | PAT بصلاحية `repo` كاملة — لعمليات PR/push/merge | ⚠️ يدوي |
 | `MODELS_TOKEN` | PAT بصلاحية `models` — **لـ GitHub Models حصراً** | ⚠️ يدوي |
 | `FACEBOOK_APP_ID` | معرّف تطبيق فيسبوك من Meta Developers | ⚙️ يدوي |
 | `FACEBOOK_APP_SECRET` | المفتاح السري لتطبيق فيسبوك | ⚙️ يدوي |
@@ -117,7 +140,7 @@ env:
 
 - عند كتابة أي Issue يحتاج متغيرات سرية، **استخدم الأسماء المذكورة أعلاه مباشرةً**
 - **لا تقترح إنشاء Secrets جديدة** إذا كان المطلوب موجوداً بالفعل في الجدول
-- `GH_TOKEN` لا يُطلب من المستخدم إنشاؤه أبداً — هو تلقائي
+- `REPO_TOKEN` هو التوكن الأساسي لكل عمليات المستودع — **استخدمه بدلاً من GITHUB_TOKEN**
 - إذا احتاج النظام Secret غير موجود في الجدول، **أذكره صراحةً** في الـ Issue
 
 ---
