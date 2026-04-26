@@ -106,8 +106,18 @@ jobs:
           FILENAME: ${{ steps.download.outputs.filename }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
+
+          comment_failure() {
+            local MESSAGE="$1"
+            curl -s -X POST \
+              -H "Authorization: Bearer $REPO_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+              -d "{\"body\":\"❌ $MESSAGE\"}" >/dev/null
+          }
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -125,10 +135,16 @@ jobs:
             --body "Closes #${ISSUE_NUMBER}" \
             --base "${DEFAULT_BRANCH:-main}" \
             --head "$BRANCH" \
-            --no-draft)
+            --no-draft) || {
+              comment_failure "تعذر إنشاء Pull Request للصورة المحمّلة. يرجى مراجعة صلاحيات REPO_TOKEN أو حماية الفرع."
+              exit 1
+            }
 
           echo "PR created: $PR_URL"
-          gh pr merge --squash --auto --delete-branch "$PR_URL"
+          gh pr merge --squash --auto --delete-branch "$PR_URL" || {
+            comment_failure "تم إنشاء PR لكن تعذر تفعيل الدمج التلقائي. يرجى مراجعة متطلبات الحماية/الفحوصات."
+            exit 1
+          }
           echo "Auto-merge enabled for: $PR_URL"
 
       # تعليق على الـ Issue (الإغلاق يتم تلقائياً عبر Closes #ISSUE_NUMBER بعد الدمج)
