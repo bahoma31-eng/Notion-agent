@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-      GH_TOKEN: ${{ secrets.REPO_TOKEN }}
 
     steps:
       - name: Checkout
@@ -107,6 +106,7 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
 
