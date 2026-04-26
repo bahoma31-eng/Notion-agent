@@ -13,7 +13,7 @@ jobs:
   download-image:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
@@ -43,10 +43,10 @@ jobs:
 
           if [ -z "$S3_URL" ]; then
             curl -s -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Authorization: Bearer $REPO_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
-              -d "{\"body\":\"❌ لم يتم العثور على رابط S3 صالح في وصف الـ Issue. يرجى إدراج رابط يحتوي على \\`amazonaws.com\\` في وصف الـ Issue.\"}"
+              -d "{\"body\":\"❌ لم يتم العثور على رابط S3 صالح في وصف الـ Issue. يرجى إدراج رابط يحتوي على \`amazonaws.com\` في وصف الـ Issue.\"}"
             exit 1
           fi
 
@@ -61,10 +61,10 @@ jobs:
 
           if [ "$HTTP_CODE" != "200" ]; then
             curl -s -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Authorization: Bearer $REPO_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER/comments" \
-              -d "{\"body\":\"❌ فشل تحميل الصورة من الرابط. رمز الاستجابة HTTP: \\`$HTTP_CODE\\`\"}"
+              -d "{\"body\":\"❌ فشل تحميل الصورة من الرابط. رمز الاستجابة HTTP: \`$HTTP_CODE\`\"}"
             exit 1
           fi
 
@@ -114,7 +114,7 @@ jobs:
 
           # إنشاء PR عبر GitHub REST API مباشرةً بدون gh CLI
           PR_RESPONSE=$(curl -s -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $REPO_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/pulls" \
             -d "{
@@ -130,7 +130,7 @@ jobs:
 
           # تفعيل auto-merge
           curl -s -X PUT \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $REPO_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/merge" \
             -d "{\"merge_method\": \"squash\"}" || true
@@ -147,14 +147,14 @@ jobs:
         run: |
           # إضافة تعليق
           curl -s -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $REPO_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-            -d "{\"body\": \"✅ تم تحميل الصورة وحفظها في \\`${FILENAME}\\` بنجاح! سيتم دمج الـ commit تلقائياً على \\`main\\`.\"}"
+            -d "{\"body\": \"✅ تم تحميل الصورة وحفظها في \`${FILENAME}\` بنجاح! سيتم دمج الـ commit تلقائياً على \`main\`.\"}"
 
           # إغلاق الـ Issue
           curl -s -X PATCH \
-            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Authorization: Bearer $REPO_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER" \
             -d "{\"state\": \"closed\"}"
