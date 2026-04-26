@@ -117,8 +117,7 @@ jobs:
               --title "feat: تحميل صورة S3 للـ Issue #${ISSUE_NUMBER}" \
               --body "Closes #${ISSUE_NUMBER}" \
               --base "${DEFAULT_BRANCH:-main}" \
-              --head "$BRANCH" \
-              --no-draft)
+              --head "$BRANCH")
             PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
           fi
 
