@@ -13,7 +13,10 @@ from email.mime.text import MIMEText
 import requests
 from openai import OpenAI
 
-# ─── الـ Prompt الخاص بتوليد المحتوى ───────────────────────────────────────
+# عنوان استلام إشعارات البريد
+NOTIFICATION_EMAIL = "bahoma31@gmail.com"
+
+# ─── الـ Prompt الخاص بتوليد المحتوى ────────────────────────────────────
 
 SYSTEM_PROMPT = """
 أنت خبير تسويق لمطعم "الركن الجميل" في مارافال، وهران، الجزائر.
@@ -33,7 +36,7 @@ SYSTEM_PROMPT = """
 """
 
 
-# ─── توليد المنشور عبر GitHub Models ────────────────────────────────────────
+# ─── توليد المنشور عبر GitHub Models ────────────────────────────────────
 
 def generate_post() -> str:
     client = OpenAI(
@@ -61,7 +64,7 @@ def generate_post() -> str:
         raise RuntimeError(f"❌ فشل توليد المحتوى عبر GitHub Models: {exc}") from exc
 
 
-# ─── نشر على فيسبوك عبر Graph API ──────────────────────────────────────────
+# ─── نشر على فيسبوك عبر Graph API ──────────────────────────────────
 
 def post_to_facebook(message: str) -> str:
     url = f"https://graph.facebook.com/v19.0/{os.environ['FB_PAGE_ID']}/feed"
@@ -81,7 +84,7 @@ def post_to_facebook(message: str) -> str:
         raise RuntimeError(f"❌ خطأ في الاتصال بفيسبوك: {exc}") from exc
 
 
-# ─── تسجيل المنشور في ملف CSV ───────────────────────────────────────────────
+# ─── تسجيل المنشور في ملف CSV ───────────────────────────────────────
 
 def log_post(post_id: str, message: str) -> None:
     log_file = "logs/posts_log.csv"
@@ -99,11 +102,12 @@ def log_post(post_id: str, message: str) -> None:
         ])
 
 
-# ─── إشعار بريدي عبر SMTP ───────────────────────────────────────────────────
+# ─── إشعار بريدي عبر SMTP ───────────────────────────────────────────
 
 def send_email_notification(post_id: str, message: str) -> None:
     smtp_user = os.environ["SMTP_USER"]
     smtp_pass = os.environ["SMTP_PASSWORD"]
+    recipient  = NOTIFICATION_EMAIL  # ✅ عنوان الاستلام المحدد
 
     msg = MIMEText(
         f"✅ تم النشر بنجاح على فيسبوك!\n\n"
@@ -117,18 +121,21 @@ def send_email_notification(post_id: str, message: str) -> None:
         f"✅ نشر جديد — الركن الجميل [{datetime.datetime.now().strftime('%H:%M')}]"
     )
     msg["From"] = smtp_user
-    msg["To"] = smtp_user
+    msg["To"]   = recipient  # ✅ يرسل لـ bahoma31@gmail.com
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
+        print(f"📧 تم إرسال البريد بنجاح إلى: {recipient}")
+    except smtplib.SMTPAuthenticationError:
+        # ❗ خطأ مصادقة — غالباً SMTP_PASSWORD غير صحيح أو لم يُفعّل App Password
+        print("⚠️ تعذّر إرسال البريد: خطأ مصادقة SMTP — تحقّق من SMTP_PASSWORD (App Password لـ Gmail)")
     except smtplib.SMTPException as exc:
-        # الإشعار البريدي اختياري — لا يوقف السكريبت عند فشله
-        print(f"⚠️ تعذّر إرسال الإشعار البريدي: {exc}")
+        print(f"⚠️ تعذّر إرسال البريد: {exc}")
 
 
-# ─── الدالة الرئيسية ─────────────────────────────────────────────────────────
+# ─── الدالة الرئيسية ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("🚀 بدء توليد المنشور...")
@@ -143,4 +150,3 @@ if __name__ == "__main__":
     print("📝 تم التسجيل في logs/posts_log.csv")
 
     send_email_notification(post_id, post_content)
-    print("📧 تم إرسال الإشعار البريدي")
