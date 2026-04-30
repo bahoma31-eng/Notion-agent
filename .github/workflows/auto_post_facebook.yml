@@ -34,13 +34,13 @@ jobs:
         run: python scripts/facebook_publisher.py
 
       - name: Commit and push log via PR branch
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # انتقل إلى branch جديد للسجل
           BRANCH="logs/post-$(date +'%Y%m%d-%H%M%S')"
           git checkout -b "$BRANCH"
 
@@ -50,7 +50,6 @@ jobs:
           git commit -m "📝 log: نشر جديد $(date +'%Y-%m-%d %H:%M')"
           git push origin "$BRANCH"
 
-          # فتح PR ودمجه تلقائياً
           gh pr create \
             --title "📝 log: نشر جديد $(date +'%Y-%m-%d %H:%M')" \
             --body "تحديث تلقائي لسجل النشر" \
@@ -58,4 +57,4 @@ jobs:
             --head "$BRANCH"
 
           PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
-          gh pr merge "$PR_NUMBER" --squash --auto --delete-branch
+          gh pr merge "$PR_NUMBER" --squash --delete-branch
