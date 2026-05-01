@@ -62,14 +62,14 @@ def load_env() -> dict:
 
 # ─── Step 1: Analyze image with Gemini ───────────────────────────────────────
 def analyze_image_with_gemini(image_path: Path, shop_info: dict, gemini_key: str) -> dict:
-    """Use Gemini Flash to find best empty region and suggest shop text.
+    """Use Gemini 2.0 Flash to find best empty region and suggest shop text.
     
     Returns dict with keys: x1, y1, x2, y2 (0-1 normalized), and prompt_text.
     """
     log.info("[Gemini] Analyzing: %s", image_path.name)
 
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     with Image.open(image_path) as img:
         width, height = img.size
