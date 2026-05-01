@@ -69,7 +69,7 @@ def analyze_image_with_gemini(image_path: Path, shop_info: dict, gemini_key: str
     log.info("[Gemini] Analyzing: %s", image_path.name)
 
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-3.0-flash")
 
     with Image.open(image_path) as img:
         width, height = img.size
