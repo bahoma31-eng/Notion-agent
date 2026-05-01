@@ -1,0 +1,59 @@
+name: 🖼️ AI Image Processor
+
+on:
+  push:
+    paths:
+      - 'input/**'
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  process-images:
+    runs-on: ubuntu-latest
+    name: Process Images with AI
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🎨 Process images
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          SHOP_INFO: ${{ secrets.SHOP_INFO }}
+          DEBUG: ${{ github.event.inputs.debug || 'false' }}
+        run: |
+          python scripts/process_images.py
+
+      - name: 📤 Commit and push processed images
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add output/
+          if git diff --staged --quiet; then
+            echo "No new processed images to commit."
+          else
+            git commit -m "🖼️ Auto-processed images [skip ci]"
+            git push
+          fi

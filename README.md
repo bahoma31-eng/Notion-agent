@@ -1,131 +1,114 @@
-# Notion-agent
+# 🖼️ AI Image Processor
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+Automatic shop branding overlay on product images using **Google Gemini** for smart region detection and **Stable Diffusion Inpainting** for seamless blending.
 
-An AI-powered GitHub automation agent that analyses newly opened issues and automatically generates structured, actionable strategic plan files using the OpenAI API. Every time a new issue is created in the repository, a `plan_strategy_<issue_number>.md` file is committed, giving contributors an instant, prioritised implementation roadmap.
+## ✨ How It Works
 
----
+1. **Drop images** into the `input/` folder and push to GitHub
+2. **Gemini Flash** analyzes each image to find the best empty area for branding
+3. **A mask** is generated over that region using Pillow
+4. **Stable Diffusion Inpainting** fills the masked area with professional shop branding
+5. **Results** are saved to `output/` and committed automatically
 
-## Features
+## 🚀 Quick Start
 
-- **Automatic plan generation** — a GitHub Actions workflow triggers on every new issue and produces a Markdown strategic plan without any manual steps.
-- **AI-powered analysis** — uses OpenAI's Chat Completions API (configurable model) to create detailed, phased implementation plans.
-- **Structured output** — every generated plan follows a consistent format: Goal, Assumptions, Phases (with tasks checklist and expected outputs), and Risks / Notes.
-- **Configurable model** — supports any OpenAI-compatible endpoint and model via environment variables.
-- **Zero external dependencies** — the Python script relies only on the standard library (`urllib`, `json`, `os`, `re`, `textwrap`).
-- **Idempotent runs** — the workflow skips file generation if a plan file for that issue already exists.
+### 1. Add GitHub Secrets
 
----
+Go to **Settings → Secrets and variables → Actions** and add:
 
-## Requirements
+| Secret | Value | Source |
+|---|---|---|
+| `GEMINI_API_KEY` | Your Gemini API key | [aistudio.google.com](https://aistudio.google.com) — Free |
+| `HF_TOKEN` | Your Hugging Face token | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) — Free |
+| `SHOP_INFO` | JSON with your shop details | See format below |
 
-- **Python** 3.11 or higher
-- No third-party Python packages are required (standard library only)
-- A GitHub repository with Actions enabled
-- An **OpenAI API key** (or a compatible provider key)
+### 2. Configure SHOP_INFO
 
----
+Paste this as the value of the `SHOP_INFO` secret (edit with your info):
 
-## Installation
+```json
+{
+  "shop_name": "متجر النجوم",
+  "phone": "+213 555 123 456",
+  "location": "وهران، الجزائر",
+  "tagline": "جودة لا تضاهى"
+}
+```
 
-1. **Fork / clone** this repository:
-
-   ```bash
-   git clone https://github.com/bahoma31-eng/Notion-agent.git
-   cd Notion-agent
-   ```
-
-2. **Add required secrets** to your GitHub repository (Settings → Secrets and variables → Actions):
-
-   | Secret | Required | Description |
-   |--------|----------|-------------|
-   | `OPENAI_API_KEY` | ✅ | Your OpenAI (or compatible) API key |
-
-3. **Add optional variables** (Settings → Secrets and variables → Actions → Variables):
-
-   | Variable | Default | Description |
-   |----------|---------|-------------|
-   | `OPENAI_MODEL` | `gpt-4o-mini` | Model name to use for generation |
-   | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for the OpenAI-compatible endpoint |
-
-4. The GitHub Actions workflow (`.github/workflows/auto_plan_strategy.yml`) is already configured and will activate automatically once secrets are set.
-
----
-
-## Usage
-
-### Automatic (recommended)
-
-Simply **open a new issue** in your repository. The `Auto-create plan_strategy file` workflow will:
-
-1. Check out the repository.
-2. Fetch the issue title and body from the GitHub API.
-3. Call the OpenAI API to generate a structured plan.
-4. Commit and push `plan_strategy_<issue_number>.md` to the repository.
-
-### Manual (local)
-
-You can also run the script locally by exporting the required environment variables:
+### 3. Add Images & Push
 
 ```bash
-export GITHUB_TOKEN="ghp_your_token_here"
-export GITHUB_REPOSITORY="bahoma31-eng/Notion-agent"
-export ISSUE_NUMBER="7"
-export OPENAI_API_KEY="sk-your-key-here"
-# Optional overrides:
-export OPENAI_MODEL="gpt-4o"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
+# Copy your images to input/
+cp my-product-photo.jpg input/
 
-python scripts/generate_plan_strategy.py
+# Commit and push — workflow starts automatically!
+git add input/
+git commit -m "Add product images for processing"
+git push
 ```
 
-The script writes the resulting plan to `plan_strategy_<ISSUE_NUMBER>.md` in the current working directory.
+### 4. Collect Results
 
----
+After the workflow completes (~2-5 min per image), find your branded images in `output/`.
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-Notion-agent/
-├── .github/
-│   └── workflows/
-│       └── auto_plan_strategy.yml  # GitHub Actions workflow that triggers on new issues
+.
+├── .github/workflows/
+│   └── image-processor.yml   # GitHub Actions workflow
 ├── scripts/
-│   └── generate_plan_strategy.py   # Core Python script: fetches issue data and calls OpenAI
-├── input/                          # Input data files (images, JSON tasks, Markdown notes)
-├── intput/                         # Alternate input folder (legacy; contains initial plan stub)
-├── plans/                          # Additional strategy and planning Markdown files
-├── plan_strategy_<N>.md            # Auto-generated plan files (one per issue number)
-└── README.md                       # This file
+│   └── process_images.py     # Main processing script
+├── input/                    # Drop your images here
+│   └── .gitkeep
+├── output/                   # Processed images appear here
+│   └── .gitkeep
+├── requirements.txt
+├── .env.example              # Template for local development
+└── README.md
 ```
 
----
+## 🔧 Manual Trigger
 
-## Configuration
+You can also trigger the workflow manually:
+1. Go to **Actions** tab
+2. Select **🖼️ AI Image Processor**
+3. Click **Run workflow**
+4. Optionally enable debug logging
 
-All runtime configuration is done through **environment variables** (injected as GitHub Actions secrets/variables in CI, or exported in your shell for local runs):
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `GITHUB_TOKEN` | ✅ | — | GitHub token used to fetch issue details via the API. Automatically available in Actions. |
-| `GITHUB_REPOSITORY` | ✅ | — | `owner/repo` string (e.g. `bahoma31-eng/Notion-agent`). Automatically available in Actions. |
-| `ISSUE_NUMBER` | ✅ | — | The issue number to generate a plan for. Automatically set in Actions. |
-| `OPENAI_API_KEY` | ✅ | — | API key for the OpenAI (or compatible) service. |
-| `OPENAI_MODEL` | ❌ | `gpt-4o-mini` | Model name passed to the chat completions endpoint. |
-| `OPENAI_BASE_URL` | ❌ | `https://api.openai.com/v1` | Base URL for the API endpoint. Override to use Azure OpenAI, Ollama, or other compatible providers. |
-
-### Using an alternative OpenAI-compatible provider
-
-Set `OPENAI_BASE_URL` to point at any OpenAI-compatible endpoint, for example:
+## 🖥️ Local Development
 
 ```bash
-export OPENAI_BASE_URL="https://my-azure-instance.openai.azure.com/openai/deployments/my-deployment"
-export OPENAI_MODEL="gpt-4o"
+# 1. Clone and install dependencies
+pip install -r requirements.txt
+
+# 2. Create .env file from template
+cp .env.example .env
+# Edit .env with your actual secrets
+
+# 3. Load env and run
+export $(cat .env | xargs)
+python scripts/process_images.py
 ```
 
----
+## ⚙️ Supported Image Formats
 
-## License
+`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`
 
-This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+## 🛠️ Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Workflow not triggering | Ensure images are inside `input/` folder |
+| `GEMINI_API_KEY` error | Verify secret name matches exactly |
+| HF model loading slowly | First run may take 2-3 min for model warm-up |
+| Image looks unchanged | Check workflow logs — Gemini region coordinates |
+| JSON parse error | Validate `SHOP_INFO` at [jsonlint.com](https://jsonlint.com) |
+
+## 📝 Notes
+
+- Each image is processed **independently** — one failure won't stop others
+- The workflow uses `[skip ci]` in the commit message to avoid infinite loops
+- Images are committed back to the repo automatically after processing
+- Gemini API is free up to 15 RPM on the free tier
+- Hugging Face Inference API is free for open models (rate limits apply)
