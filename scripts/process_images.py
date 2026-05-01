@@ -27,15 +27,17 @@ SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("output")
 
-# HuggingFace standard model inference endpoint (base64 JSON payload)
+# HuggingFace standard model inference endpoint
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
 HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
 GPT_MODEL = "gpt-4o"
 
-# Max dimension for inpainting (SD requires multiples of 8, 512 is optimal)
-MAX_INPAINT_SIZE = 512
+# SD inpainting optimal size — must be 512x512 exactly to stay under HF 1MB limit
+INPAINT_SIZE = 512
+# JPEG quality for HF payload — lower = smaller payload
+HF_JPEG_QUALITY = 75
 
 
 # ─── Environment Variables ────────────────────────────────────────────────────
@@ -134,27 +136,22 @@ def create_mask(image_path: Path, coords: dict) -> Image.Image:
     return mask
 
 
-def _pil_to_b64_png(img: Image.Image) -> str:
-    """Convert PIL image to base64-encoded PNG string."""
+def _pil_to_b64_jpeg(img: Image.Image, quality: int = HF_JPEG_QUALITY) -> str:
+    """Convert PIL image to base64-encoded JPEG string (smaller than PNG)."""
     buf = BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
+    img.convert("RGB").save(buf, format="JPEG", quality=quality, optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    size_kb = len(buf.getvalue()) / 1024
+    log.debug("[b64] JPEG size: %.1f KB (quality=%d)", size_kb, quality)
+    return b64
 
 
-def _resize_for_inpainting(img: Image.Image) -> Image.Image:
-    """Resize to fit within MAX_INPAINT_SIZE, dimensions divisible by 8."""
-    w, h = img.size
-    if max(w, h) <= MAX_INPAINT_SIZE:
-        # Still ensure divisible by 8
-        new_w = (w // 8) * 8
-        new_h = (h // 8) * 8
-        if new_w == w and new_h == h:
-            return img
-        return img.resize((new_w, new_h), Image.LANCZOS)
-    scale = MAX_INPAINT_SIZE / max(w, h)
-    new_w = (int(w * scale) // 8) * 8
-    new_h = (int(h * scale) // 8) * 8
-    return img.resize((new_w, new_h), Image.LANCZOS)
+def _resize_to_512_square(img: Image.Image) -> Image.Image:
+    """
+    Resize image to exactly 512x512 for SD inpainting.
+    SD inpainting requires square 512x512 input for best results and minimal payload.
+    """
+    return img.convert("RGB").resize((INPAINT_SIZE, INPAINT_SIZE), Image.LANCZOS)
 
 
 # ─── Step 3: Inpainting via HuggingFace models endpoint (JSON + base64) ────
@@ -164,22 +161,31 @@ def inpaint_with_huggingface(
     prompt_text: str,
     hf_token: str,
 ) -> Image.Image:
-    """POST to HF standard models endpoint with base64 JSON payload."""
+    """POST to HF standard models endpoint with base64 JPEG payload."""
     log.info("[HF] Sending inpainting request to: %s", HF_API_URL)
 
     with Image.open(image_path) as img:
         orig_size = img.size
-        img_resized = _resize_for_inpainting(img.convert("RGB"))
+        img_512 = _resize_to_512_square(img)
 
-    mask_resized = mask.resize(img_resized.size, Image.NEAREST).convert("L")
-    log.info("[HF] Input size: %s -> resized: %s", orig_size, img_resized.size)
+    # Resize mask to exact same 512x512, convert to grayscale L
+    mask_512 = mask.resize((INPAINT_SIZE, INPAINT_SIZE), Image.NEAREST).convert("L")
+
+    log.info("[HF] Input size: %s -> resized to: %dx%d", orig_size, INPAINT_SIZE, INPAINT_SIZE)
+
+    img_b64 = _pil_to_b64_jpeg(img_512)
+    mask_b64 = _pil_to_b64_jpeg(mask_512.convert("RGB"), quality=90)
+
+    log.info("[HF] Payload image: ~%.1f KB | mask: ~%.1f KB",
+             len(img_b64) * 3 / 4 / 1024,
+             len(mask_b64) * 3 / 4 / 1024)
 
     payload = {
         "inputs": prompt_text,
         "parameters": {
-            "image": _pil_to_b64_png(img_resized),
-            "mask_image": _pil_to_b64_png(mask_resized),
-            "num_inference_steps": 30,
+            "image": img_b64,
+            "mask_image": mask_b64,
+            "num_inference_steps": 25,
             "guidance_scale": 7.5,
         },
     }
@@ -187,7 +193,7 @@ def inpaint_with_huggingface(
     headers = {
         "Authorization": f"Bearer {hf_token}",
         "Content-Type": "application/json",
-        "Accept": "image/png",
+        "Accept": "image/png,image/jpeg,*/*",
     }
 
     response = requests.post(
@@ -203,10 +209,8 @@ def inpaint_with_huggingface(
     if response.status_code == 200:
         content_type = response.headers.get("Content-Type", "")
         if "image" in content_type:
-            # Response is raw image bytes
             result_img = Image.open(BytesIO(response.content)).convert("RGB")
         else:
-            # Try JSON with base64
             resp_json = response.json()
             if isinstance(resp_json, list):
                 img_data = resp_json[0].get("generated_image") or resp_json[0].get("image")
@@ -214,18 +218,24 @@ def inpaint_with_huggingface(
                 img_data = resp_json.get("generated_image") or resp_json.get("image")
             result_img = Image.open(BytesIO(base64.b64decode(img_data))).convert("RGB")
 
+        # Resize result back to original dimensions
         if result_img.size != orig_size:
             result_img = result_img.resize(orig_size, Image.LANCZOS)
-        log.info("[HF] Inpainting successful")
+        log.info("[HF] Inpainting successful, restored to original size: %s", orig_size)
         return result_img
 
     elif response.status_code == 503:
-        # Model is loading
         try:
             wait = response.json().get("estimated_time", 30)
         except Exception:
             wait = 30
         raise RuntimeError(f"HF model is loading, retry in ~{wait}s (503). Re-run the workflow.")
+
+    elif response.status_code == 413:
+        raise RuntimeError(
+            "HF API error 413: payload still too large. "
+            f"Payload sizes — image: ~{len(img_b64)*3//4//1024}KB, mask: ~{len(mask_b64)*3//4//1024}KB"
+        )
     else:
         raise RuntimeError(f"HF API error {response.status_code}: {response.text[:600]}")
 
