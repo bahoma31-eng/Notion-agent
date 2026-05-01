@@ -39,7 +39,7 @@ jobs:
 
       - name: 🎨 Process images
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODELS_TOKEN: ${{ secrets.MODELS_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           SHOP_INFO: ${{ secrets.SHOP_INFO }}
           DEBUG: ${{ github.event.inputs.debug || 'false' }}
