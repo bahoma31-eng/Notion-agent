@@ -27,14 +27,14 @@ SUPPORTED_FORMATS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 INPUT_DIR = Path("input")
 OUTPUT_DIR = Path("output")
 
-# HuggingFace Inference API v1 - JSON endpoint (supports base64 image+mask)
-HF_API_URL = "https://api-inference.huggingface.co/v1/images/edits"
+# HuggingFace standard model inference endpoint (base64 JSON payload)
 HF_MODEL = "runwayml/stable-diffusion-inpainting"
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
 GPT_MODEL = "gpt-4o"
 
-# Max dimension to send to HF (avoids payload too large errors)
+# Max dimension for inpainting (SD requires multiples of 8, 512 is optimal)
 MAX_INPAINT_SIZE = 512
 
 
@@ -85,7 +85,7 @@ def analyze_image_with_gpt4o(image_path: Path, shop_info: dict, models_token: st
 Shop: {shop_name} | Phone: {phone} | Location: {location} | Tagline: {tagline}
 
 Respond ONLY in valid JSON (no markdown):
-{{"x1":<float 0-1>,"y1":<float 0-1>,"x2":<float 0-1>,"y2":<float 0-1>,"prompt_text":"<inpainting prompt describing shop sign with name, phone, clean background>"}}
+{{"x1":<float 0-1>,"y1":<float 0-1>,"x2":<float 0-1>,"y2":<float 0-1>,"prompt_text":"<inpainting prompt describing a professional shop sign with the shop name, phone number, on a clean white background with elegant typography>"}}
 Box must be at least 0.15 wide and 0.10 tall."""
 
     response = client.chat.completions.create(
@@ -134,79 +134,100 @@ def create_mask(image_path: Path, coords: dict) -> Image.Image:
     return mask
 
 
-def _pil_to_png_bytes(img: Image.Image) -> bytes:
+def _pil_to_b64_png(img: Image.Image) -> str:
+    """Convert PIL image to base64-encoded PNG string."""
     buf = BytesIO()
     img.save(buf, format="PNG")
-    return buf.getvalue()
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _resize_for_inpainting(img: Image.Image) -> Image.Image:
-    """Resize to fit within MAX_INPAINT_SIZE while keeping aspect ratio."""
+    """Resize to fit within MAX_INPAINT_SIZE, dimensions divisible by 8."""
     w, h = img.size
     if max(w, h) <= MAX_INPAINT_SIZE:
-        return img
+        # Still ensure divisible by 8
+        new_w = (w // 8) * 8
+        new_h = (h // 8) * 8
+        if new_w == w and new_h == h:
+            return img
+        return img.resize((new_w, new_h), Image.LANCZOS)
     scale = MAX_INPAINT_SIZE / max(w, h)
-    new_w, new_h = int(w * scale), int(h * scale)
-    # SD inpainting requires dimensions divisible by 8
-    new_w = (new_w // 8) * 8
-    new_h = (new_h // 8) * 8
+    new_w = (int(w * scale) // 8) * 8
+    new_h = (int(h * scale) // 8) * 8
     return img.resize((new_w, new_h), Image.LANCZOS)
 
 
-# ─── Step 3: Inpainting via Hugging Face v1 API ───────────────────────────
+# ─── Step 3: Inpainting via HuggingFace models endpoint (JSON + base64) ────
 def inpaint_with_huggingface(
     image_path: Path,
     mask: Image.Image,
     prompt_text: str,
     hf_token: str,
 ) -> Image.Image:
-    """Send image + mask via multipart to HF v1 images/edits endpoint."""
-    log.info("[HF] Sending inpainting request for: %s", image_path.name)
+    """POST to HF standard models endpoint with base64 JSON payload."""
+    log.info("[HF] Sending inpainting request to: %s", HF_API_URL)
 
     with Image.open(image_path) as img:
         orig_size = img.size
         img_resized = _resize_for_inpainting(img.convert("RGB"))
 
     mask_resized = mask.resize(img_resized.size, Image.NEAREST).convert("L")
+    log.info("[HF] Input size: %s -> resized: %s", orig_size, img_resized.size)
 
-    log.info("[HF] Resized to: %s", img_resized.size)
+    payload = {
+        "inputs": prompt_text,
+        "parameters": {
+            "image": _pil_to_b64_png(img_resized),
+            "mask_image": _pil_to_b64_png(mask_resized),
+            "num_inference_steps": 30,
+            "guidance_scale": 7.5,
+        },
+    }
 
     headers = {
         "Authorization": f"Bearer {hf_token}",
-        "X-Use-Cache": "0",
-    }
-
-    files = {
-        "image": ("image.png", _pil_to_png_bytes(img_resized), "image/png"),
-        "mask_image": ("mask.png", _pil_to_png_bytes(mask_resized), "image/png"),
-    }
-    data = {
-        "prompt": prompt_text,
-        "model": HF_MODEL,
-        "num_inference_steps": "30",
-        "response_format": "b64_json",
+        "Content-Type": "application/json",
+        "Accept": "image/png",
     }
 
     response = requests.post(
         HF_API_URL,
         headers=headers,
-        files=files,
-        data=data,
+        json=payload,
         timeout=180,
     )
 
+    log.info("[HF] Response status: %d | Content-Type: %s",
+             response.status_code, response.headers.get("Content-Type", "unknown"))
+
     if response.status_code == 200:
-        resp_json = response.json()
-        # v1 returns {"data": [{"b64_json": "..."}]}
-        b64_data = resp_json["data"][0]["b64_json"]
-        result_img = Image.open(BytesIO(base64.b64decode(b64_data))).convert("RGB")
+        content_type = response.headers.get("Content-Type", "")
+        if "image" in content_type:
+            # Response is raw image bytes
+            result_img = Image.open(BytesIO(response.content)).convert("RGB")
+        else:
+            # Try JSON with base64
+            resp_json = response.json()
+            if isinstance(resp_json, list):
+                img_data = resp_json[0].get("generated_image") or resp_json[0].get("image")
+            else:
+                img_data = resp_json.get("generated_image") or resp_json.get("image")
+            result_img = Image.open(BytesIO(base64.b64decode(img_data))).convert("RGB")
+
         if result_img.size != orig_size:
             result_img = result_img.resize(orig_size, Image.LANCZOS)
         log.info("[HF] Inpainting successful")
         return result_img
+
+    elif response.status_code == 503:
+        # Model is loading
+        try:
+            wait = response.json().get("estimated_time", 30)
+        except Exception:
+            wait = 30
+        raise RuntimeError(f"HF model is loading, retry in ~{wait}s (503). Re-run the workflow.")
     else:
-        error_msg = response.text[:600]
-        raise RuntimeError(f"HF API error {response.status_code}: {error_msg}")
+        raise RuntimeError(f"HF API error {response.status_code}: {response.text[:600]}")
 
 
 # ─── Step 4: Save output ─────────────────────────────────────────────────────
@@ -234,7 +255,7 @@ def process_image(image_path: Path, env: dict) -> bool:
 
 
 def main():
-    log.info("🚀 AI Image Processor starting (GPT-4o + HF Inpainting v1)...")
+    log.info("🚀 AI Image Processor starting (GPT-4o + HF Inpainting)...")
     try:
         env = load_env()
     except (EnvironmentError, ValueError) as e:
@@ -246,7 +267,8 @@ def main():
     if not INPUT_DIR.exists():
         INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    images = [p for p in INPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_FORMATS]
+    images = [p for p in INPUT_DIR.iterdir()
+              if p.is_file() and p.suffix.lower() in SUPPORTED_FORMATS]
 
     if not images:
         log.info("No images found in input/. Nothing to do.")
