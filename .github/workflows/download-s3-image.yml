@@ -12,8 +12,6 @@ permissions:
 jobs:
   download-image:
     runs-on: ubuntu-latest
-    env:
-      REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
@@ -48,6 +46,7 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           IMG_URL: ${{ steps.extract_url.outputs.img_url }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -98,7 +97,7 @@ jobs:
           cp "$TEMP_FILE" "$DEST"
           echo "filename=$DEST" >> "$GITHUB_OUTPUT"
 
-      # إنشاء branch وفتح PR عبر GitHub REST API
+      # إنشاء branch وفتح PR وتفعيل auto-merge
       - name: Commit and open PR
         if: steps.download.conclusion == 'success'
         env:
@@ -106,8 +105,18 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
+
+          comment_failure() {
+            local MESSAGE="$1"
+            curl -s -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+              -d "{\"body\":\"❌ $MESSAGE\"}" >/dev/null
+          }
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -120,45 +129,34 @@ jobs:
           git commit -m "feat: Add image for issue #${ISSUE_NUMBER}"
           git push origin "$BRANCH"
 
-          PR_RESPONSE=$(curl -s -X POST \
-            -H "Authorization: Bearer $REPO_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/pulls" \
-            -d "{
-              \"title\": \"feat: تحميل صورة للـ Issue #${ISSUE_NUMBER}\",
-              \"body\": \"Closes #${ISSUE_NUMBER}\",
-              \"head\": \"$BRANCH\",
-              \"base\": \"${DEFAULT_BRANCH:-main}\",
-              \"draft\": false
-            }")
+          PR_URL=$(gh pr create \
+            --title "feat: تحميل صورة للـ Issue #${ISSUE_NUMBER}" \
+            --body "Closes #${ISSUE_NUMBER}" \
+            --base "${DEFAULT_BRANCH:-main}" \
+            --head "$BRANCH" \
+            --no-draft) || {
+              comment_failure "تعذر إنشاء Pull Request للصورة المحمّلة. يرجى مراجعة صلاحيات REPO_TOKEN أو حماية الفرع."
+              exit 1
+            }
 
-          PR_NUMBER=$(echo "$PR_RESPONSE" | grep -o '"number":[0-9]*' | head -1 | grep -o '[0-9]*')
-          echo "PR #${PR_NUMBER} created."
+          echo "PR created: $PR_URL"
+          gh pr merge --squash --auto --delete-branch "$PR_URL" || {
+            comment_failure "تم إنشاء PR لكن تعذر تفعيل الدمج التلقائي. يرجى مراجعة متطلبات الحماية/الفحوصات."
+            exit 1
+          }
+          echo "Auto-merge enabled for: $PR_URL"
 
-          curl -s -X PUT \
-            -H "Authorization: Bearer $REPO_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/merge" \
-            -d "{\"merge_method\": \"squash\"}" || true
-
-          echo "Merge attempted for PR #${PR_NUMBER}."
-
-      # تعليق وإغلاق الـ Issue
-      - name: Comment and close issue
+      # تعليق على الـ Issue (الإغلاق يتم تلقائياً عبر Closes #ISSUE_NUMBER بعد الدمج)
+      - name: Comment on issue
         if: steps.download.conclusion == 'success'
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           FILENAME: ${{ steps.download.outputs.filename }}
           REPO: ${{ github.repository }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           curl -s -X POST \
             -H "Authorization: Bearer $REPO_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
             -d "{\"body\": \"✅ تم تحميل الصورة وحفظها في \`${FILENAME}\` بنجاح! سيتم دمجها تلقائياً على \`main\`.\"}"
-
-          curl -s -X PATCH \
-            -H "Authorization: Bearer $REPO_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER" \
-            -d "{\"state\": \"closed\"}"
