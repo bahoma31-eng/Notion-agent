@@ -36,7 +36,7 @@ jobs:
       - name: Commit and push log via PR branch
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
